@@ -7,4 +7,5 @@ if project not in sys.path:
     sys.path.insert(0, project)
 
 from foodbridge import create_app
-application = create_app()
+app = create_app()
+application = app

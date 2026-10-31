@@ -8,8 +8,12 @@ from flask.cli import with_appcontext
 
 
 def get_db():
-    """Return one SQLite connection per Flask application context."""
+    """Return one database connection per Flask application context."""
     if "db" not in g:
+        if current_app.config.get('DATABASE_URL'):
+            from .postgres import Connection
+            g.db = Connection(current_app.config['DATABASE_URL'], current_app.config.get('DATABASE_SCHEMA'))
+            return g.db
         g.db = sqlite3.connect(current_app.config["DATABASE"])
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
@@ -25,6 +29,14 @@ def close_db(exception=None):
 
 def init_db():
     """Create missing tables from schema.sql without deleting existing data."""
+    if current_app.config.get('DATABASE_URL'):
+        connection = get_db()
+        # Multiple cold starts can initialize concurrently; serialize schema DDL.
+        connection.execute('SELECT pg_advisory_xact_lock(7402123401)')
+        with current_app.open_resource('schema_postgres.sql') as schema:
+            connection.executescript(schema.read().decode('utf-8'))
+        connection.commit()
+        return
     Path(current_app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     with current_app.open_resource("schema.sql") as schema:
         get_db().executescript(schema.read().decode("utf-8"))

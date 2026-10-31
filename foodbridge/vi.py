@@ -84,12 +84,12 @@ def rc():
         elif db.execute("SELECT id FROM users WHERE email = ?", (em,)).fetchone():
             flash("This email is already used.")
         else:
-            db.execute(
+            charity_record = db.execute(
                 "INSERT INTO charities (organization_name, license_number, city, address, status)"
                 " VALUES (?, ?, ?, ?, ?)",
                 (on, ln, ct, ar, "Pending"),
             )
-            charity_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            charity_id = charity_record.lastrowid
             db.execute(
                 "INSERT INTO users (name, email, password, phone, role, account_status, charity_id)"
                 " VALUES (?, ?, ?, ?, ?, 'Pending', ?)",

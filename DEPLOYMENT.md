@@ -14,7 +14,7 @@ This is a separate copy of the current FoodBridge application, prepared for a Py
 2. Build the supplied Dockerfile.
 3. Mount persistent storage at /app/instance before accepting registrations.
 4. Set up the administrator through the existing create-admin command on the deployed service; local administrator credentials are not copied.
-5. Verify the public HTTPS URL, registration approval, requests and collection workflow before sharing.
+5. Verify the public HTTPS URL, immediate registration and login, requests and collection workflow before sharing.
 
 Persistent disks on Render require a paid service. Confirm the selected plan and price with the user before activation. Free services without durable storage must not be presented as a persistent database solution.
 

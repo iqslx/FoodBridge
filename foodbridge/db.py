@@ -35,6 +35,7 @@ def init_db():
         connection.execute('SELECT pg_advisory_xact_lock(7402123401)')
         with current_app.open_resource('schema_postgres.sql') as schema:
             connection.executescript(schema.read().decode('utf-8'))
+        activate_waiting_accounts(connection)
         connection.commit()
         return
     Path(current_app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
@@ -53,7 +54,14 @@ def init_db():
     donation_columns = {row[1] for row in connection.execute("PRAGMA table_info(donations)")}
     if "donor_id" not in donation_columns:
         connection.execute("ALTER TABLE donations ADD COLUMN donor_id INTEGER REFERENCES users(id)")
+    activate_waiting_accounts(connection)
     connection.commit()
+
+
+def activate_waiting_accounts(connection):
+    """Registration no longer requires review; leave Inactive accounts disabled."""
+    connection.execute("UPDATE users SET account_status='Active' WHERE account_status='Pending' AND role IN ('donor','charity')")
+    connection.execute("UPDATE charities SET status='Active' WHERE status='Pending' AND id IN (SELECT charity_id FROM users WHERE role='charity' AND account_status='Active')")
 
 
 @click.command("init-db")

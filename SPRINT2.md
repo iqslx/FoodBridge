@@ -13,7 +13,7 @@ All new pages use the existing English interface and responsive green theme.
 | US16 | Charity search combines food text, minimum quantity and pickup area. Clear filters returns the full available list. |
 | US15 | In-app notifications for requests, decisions, edits, removal, expiry, collection and account status. Unread badge and mark-all-read. |
 | US12 | Donor history shows collected/expired donations, with recipient charity for collected donations. |
-| US13 | Admin reviews donor/charity accounts, organization license and address, approves, deactivates and reactivates accounts. New accounts wait for approval. |
+| US13 | Admin reviews donor/charity accounts, organization license and address, approves, deactivates and reactivates accounts. New accounts activate immediately without approval. |
 | US14 | Admin overview shows all donation statuses, user accounts and the latest 100 recorded activity events. |
 
 ## Agreed behavior
@@ -45,7 +45,7 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-Open http://127.0.0.1:5000. Database creation and upgrades run automatically. New registrations need admin approval. A private session key is generated inside `instance/secret.key` on first startup. The application binds only to localhost by default.
+Open http://127.0.0.1:5000. Database creation and upgrades run automatically. New registrations activate immediately; admin review is optional. A private session key is generated inside `instance/secret.key` on first startup. The application binds only to localhost by default.
 
 ## Verification
 
@@ -56,3 +56,5 @@ Run the standalone integration suite after installing requirements:
 ```powershell
 python tests/test_workflow.py
 ```
+
+Registration policy: donor and charity accounts are Active immediately. Previously Pending donor/charity accounts are upgraded to Active once loaded by this version. Inactive accounts remain disabled and administrator access stays separate.

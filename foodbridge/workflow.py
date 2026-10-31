@@ -66,7 +66,7 @@ def prepare():
             session.pop(session_key, None)
             if not g.admin_portal:
                 session.pop('role', None)
-            flash('Your account is pending approval or has been deactivated. Please contact the administrator.')
+            flash('Your account is not active. Please contact the administrator.')
             return redirect(url_for('flow.admin_login' if g.admin_portal else 'vi.li'))
         g.user = candidate
     if request.method == 'POST':

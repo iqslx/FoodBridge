@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(dir=root/'tests') as td:
         data=dict(name=name,email=email,password='test-password',confirm_password='test-password')
         if role=='charity': data.update(organization_name=name,license_number='LC123',city='Riyadh',address='Olaya')
         r=post(c,'/charity' if role=='charity' else '/register',data)
-        ok(r.status_code==200 and b'Awaiting administrator approval' in r.data,'registration pending '+name)
+        ok(r.status_code==200 and b'You can log in now.' in r.data,'registration active immediately '+name)
         return query('SELECT id FROM users WHERE email=?',(email,))[0]['id']
     admin=client()
     runner=app.test_cli_runner()
@@ -45,9 +45,9 @@ with tempfile.TemporaryDirectory(dir=root/'tests') as td:
     oid=register(other,'Other Donor','other@test.com')
     cid=register(charity,'Charity One','charity@test.com','charity')
     c2id=register(charity2,'Charity Two','charity2@test.com','charity')
-    ok(b'pending approval' in login(donor,'donor@test.com').data,'pending accounts cannot log in')
+    ok(b'Hello, Donor One.' in login(donor,'donor@test.com').data,'new donor can log in without administrator approval')
     for uid in [did,oid,cid,c2id]:
-        ok(post(admin,f'/admin/users/{uid}/approve').status_code==200,'admin approves '+str(uid))
+        ok(query('SELECT account_status FROM users WHERE id=?',(uid,))[0]['account_status']=='Active','account already active '+str(uid))
     for c,email in [(donor,'donor@test.com'),(other,'other@test.com'),(charity,'charity@test.com'),(charity2,'charity2@test.com')]:
         ok(login(c,email).status_code==200,'approved login '+email)
     ok(charity.get('/admin').status_code==302,'charity cannot access admin')
@@ -110,8 +110,8 @@ with tempfile.TemporaryDirectory(dir=root/'tests') as td:
     post(donor,f'/requests/{r5}/accept')
     ok(post(admin,f'/admin/users/{c2id}/deactivate').status_code==200,'deactivate charity')
     ok(query('SELECT status FROM donations WHERE id=?',(d5,))[0]['status']=='Available','deactivation releases reserved donation')
-    ok(b'pending approval or has been deactivated' in charity2.get('/requests',follow_redirects=True).data,'deactivation invalidates live session')
-    ok(b'pending approval or has been deactivated' in login(charity2,'charity2@test.com').data,'inactive cannot log in')
+    ok(b'not active' in charity2.get('/requests',follow_redirects=True).data,'deactivation invalidates live session')
+    ok(b'not active' in login(charity2,'charity2@test.com').data,'inactive cannot log in')
     post(admin,f'/admin/users/{c2id}/approve')
     ok(b'Available Donations' in login(charity2,'charity2@test.com').data,'reactivation permits login')
     ok(post(charity,'/notifications/read').status_code==200,'mark notifications read')

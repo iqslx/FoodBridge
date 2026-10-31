@@ -53,14 +53,14 @@ def rg():
         else:
             db.execute(
                 "INSERT INTO users (name, email, password, phone, role, account_status)"
-                " VALUES (?, ?, ?, ?, ?, 'Pending')",
+                " VALUES (?, ?, ?, ?, ?, 'Active')",
                 (nm, em, generate_password_hash(pw), ph, "donor"),
             )
             db.commit()
             from .workflow import audit
             audit('Donor registered', em)
             db.commit()
-            flash("Account created. Awaiting administrator approval before you can log in.")
+            flash("Account created. You can log in now.")
             return redirect(url_for("vi.li"))
     return render_template("register.html")
 
@@ -87,19 +87,19 @@ def rc():
             charity_record = db.execute(
                 "INSERT INTO charities (organization_name, license_number, city, address, status)"
                 " VALUES (?, ?, ?, ?, ?)",
-                (on, ln, ct, ar, "Pending"),
+                (on, ln, ct, ar, "Active"),
             )
             charity_id = charity_record.lastrowid
             db.execute(
                 "INSERT INTO users (name, email, password, phone, role, account_status, charity_id)"
-                " VALUES (?, ?, ?, ?, ?, 'Pending', ?)",
+                " VALUES (?, ?, ?, ?, ?, 'Active', ?)",
                 (on, em, generate_password_hash(pw), ph, "charity", charity_id),
             )
             db.commit()
             from .workflow import audit
             audit('Charity registered', em)
             db.commit()
-            flash("Charity account created. Awaiting administrator approval before you can log in.")
+            flash("Charity account created. You can log in now.")
             return redirect(url_for("vi.li"))
     return render_template("charity.html")
 
@@ -115,7 +115,7 @@ def li():
         if u is None or not check_password_hash(u["password"], pw) or u["role"] not in ("donor", "charity"):
             flash("Invalid email or password.")
         elif u['account_status'] != 'Active':
-            flash('Your account is pending approval or has been deactivated. Please contact the administrator.')
+            flash('Your account is not active. Please contact the administrator.')
         else:
             session["csrf"] = token_urlsafe(32)
             session["uid"] = u["id"]

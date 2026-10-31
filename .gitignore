@@ -1,0 +1,18 @@
+# Private runtime state and local credentials
+instance/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.key
+.env
+.env.*
+!.env.example
+*admin-access*
+
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/

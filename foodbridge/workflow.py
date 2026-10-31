@@ -7,7 +7,7 @@ from functools import wraps
 import click
 from flask import Blueprint, abort, current_app, flash, g, redirect, render_template, request, session, url_for
 from flask.cli import with_appcontext
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 from .db import get_db
 
 bp = Blueprint('flow', __name__)
@@ -25,7 +25,7 @@ def notify(user_id, message, donation_id=None, event=None):
 
 def audit(action, detail):
     get_db().execute('INSERT INTO activity(actor_id, action, detail, created_at) VALUES(?,?,?,?)',
-                     (session.get('uid'), action, detail, now()))
+                     (g.user['id'] if getattr(g, 'user', None) else None, action, detail, now()))
 
 
 def expire():
@@ -50,12 +50,25 @@ def csrf_token():
 @bp.before_app_request
 def prepare():
     g.user = None
+    g.admin_portal = request.path == '/admin' or request.path.startswith('/admin/')
+    # Upgrade older administrator sessions without treating them as public users.
     if session.get('uid'):
-        g.user = get_db().execute('SELECT * FROM users WHERE id=?', (session['uid'],)).fetchone()
-        if not g.user or g.user['account_status'] != 'Active':
-            session.clear()
+        legacy = get_db().execute('SELECT role FROM users WHERE id=?', (session['uid'],)).fetchone()
+        if legacy and legacy['role'] == 'admin':
+            session.setdefault('admin_uid', session['uid'])
+            session.pop('uid', None)
+            session.pop('role', None)
+    session_key = 'admin_uid' if g.admin_portal else 'uid'
+    if session.get(session_key):
+        candidate = get_db().execute('SELECT * FROM users WHERE id=?', (session[session_key],)).fetchone()
+        allowed = ('admin',) if g.admin_portal else ('donor', 'charity')
+        if not candidate or candidate['account_status'] != 'Active' or candidate['role'] not in allowed:
+            session.pop(session_key, None)
+            if not g.admin_portal:
+                session.pop('role', None)
             flash('Your account is pending approval or has been deactivated. Please contact the administrator.')
-            return redirect(url_for('vi.li'))
+            return redirect(url_for('flow.admin_login' if g.admin_portal else 'vi.li'))
+        g.user = candidate
     if request.method == 'POST':
         expected = session.get('csrf', '')
         supplied = request.form.get('csrf_token', '')
@@ -70,7 +83,7 @@ def common():
     unread = 0
     if getattr(g, 'user', None):
         unread = get_db().execute('SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0', (g.user['id'],)).fetchone()[0]
-    return dict(csrf_token=csrf_token, current_user=getattr(g, 'user', None), unread_count=unread)
+    return dict(csrf_token=csrf_token, current_user=getattr(g, 'user', None), unread_count=unread, admin_portal=getattr(g, 'admin_portal', False))
 
 
 def role(*roles):
@@ -78,7 +91,7 @@ def role(*roles):
         @wraps(fn)
         def wrapped(*args, **kwargs):
             if not g.user:
-                return redirect(url_for('vi.li'))
+                return redirect(url_for('flow.admin_login' if getattr(g, 'admin_portal', False) else 'vi.li'))
             if g.user['role'] not in roles:
                 abort(403)
             return fn(*args, **kwargs)
@@ -265,7 +278,31 @@ def read_notifications():
     db.execute('UPDATE notifications SET is_read=1 WHERE user_id=?',(g.user['id'],))
     db.commit()
     flash('All notifications marked as read.')
-    return redirect(url_for('flow.notifications'))
+    return redirect(url_for('flow.admin_notifications' if g.admin_portal else 'flow.notifications'))
+
+
+@bp.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if g.user and g.user['role'] == 'admin':
+        return redirect(url_for('flow.admin'))
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        user = get_db().execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
+        if not user or not check_password_hash(user['password'], password) or user['role'] != 'admin' or user['account_status'] != 'Active':
+            flash('Invalid administrator email or password.')
+        else:
+            # Independent login: keep any donor/charity session in other tabs intact.
+            session['admin_uid'] = user['id']
+            session['csrf'] = secrets.token_urlsafe(32)
+            return redirect(url_for('flow.admin'))
+    return render_template('admin_login.html')
+
+
+@bp.route('/admin/logout')
+def admin_logout():
+    session.pop('admin_uid', None)
+    return redirect(url_for('flow.admin_login'))
 
 
 @bp.route('/admin')
@@ -323,7 +360,13 @@ def create_admin(email,password):
         raise click.ClickException('Email already exists; existing accounts are never promoted automatically.')
     db.execute("INSERT INTO users(name,email,password,role,account_status) VALUES(?,?,?,'admin','Active')",('Administrator',email,generate_password_hash(password)))
     db.commit()
-    click.echo('Administrator created. Log in through /login.')
+    click.echo('Administrator created. Log in through /admin/login.')
+
+
+# Separate admin URLs keep navigation and authentication inside the portal.
+bp.add_url_rule('/admin/donation/<int:donation_id>', endpoint='admin_detail', view_func=detail)
+bp.add_url_rule('/admin/notifications', endpoint='admin_notifications', view_func=notifications)
+bp.add_url_rule('/admin/notifications/read', endpoint='admin_read_notifications', view_func=read_notifications, methods=['POST'])
 
 
 def init_app(app):

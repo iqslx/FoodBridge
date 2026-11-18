@@ -6,7 +6,6 @@ from flask import Blueprint, flash, redirect, render_template, request, session,
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import get_db
-from .donations import get_available_donations
 
 bp = Blueprint("vi", __name__)
 SA = timezone(timedelta(hours=3))

@@ -4,7 +4,7 @@ from datetime import datetime,timedelta,timezone
 root=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(root))
 from foodbridge import create_app
-from foodbridge.db import get_db
+from foodbridge.database.connection import get_db
 from werkzeug.security import generate_password_hash
 
 checks=0

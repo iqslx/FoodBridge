@@ -8,9 +8,9 @@ import click
 from flask import Blueprint, abort, current_app, flash, g, redirect, render_template, request, session, url_for
 from flask.cli import with_appcontext
 from werkzeug.security import generate_password_hash, check_password_hash
-from .db import get_db
+from ..database.connection import get_db
 
-bp = Blueprint('flow', __name__)
+bp = Blueprint('workflow', __name__)
 
 
 def now():
@@ -67,7 +67,7 @@ def prepare():
             if not g.admin_portal:
                 session.pop('role', None)
             flash('Your account is not active. Please contact the administrator.')
-            return redirect(url_for('flow.admin_login' if g.admin_portal else 'vi.li'))
+            return redirect(url_for('workflow.admin_login' if g.admin_portal else 'public.login'))
         g.user = candidate
     if request.method == 'POST':
         expected = session.get('csrf', '')
@@ -91,7 +91,7 @@ def role(*roles):
         @wraps(fn)
         def wrapped(*args, **kwargs):
             if not g.user:
-                return redirect(url_for('flow.admin_login' if getattr(g, 'admin_portal', False) else 'vi.li'))
+                return redirect(url_for('workflow.admin_login' if getattr(g, 'admin_portal', False) else 'public.login'))
             if g.user['role'] not in roles:
                 abort(403)
             return fn(*args, **kwargs)
@@ -122,7 +122,7 @@ def detail(donation_id):
         sql += ' AND r.charity_id=?'
         args.append(g.user['id'])
     rs = get_db().execute(sql+' ORDER BY r.id DESC', args).fetchall()
-    return render_template('detail.html', d=d, rs=rs)
+    return render_template('shared/donation_details.html', d=d, rs=rs)
 
 
 @bp.route('/donation/<int:donation_id>/request', methods=['POST'])
@@ -141,7 +141,7 @@ def request_donation(donation_id):
             notify(d['donor_id'], f"{g.user['name']} requested your donation: {d['food_type']}.", donation_id)
             audit('Request sent', f'Donation #{donation_id}')
             flash('Request sent. The donor will review it.')
-    return redirect(url_for('flow.detail', donation_id=donation_id))
+    return redirect(url_for('workflow.detail', donation_id=donation_id))
 
 
 @bp.route('/requests/<int:request_id>/<decision>', methods=['POST'])
@@ -170,7 +170,7 @@ def decide(request_id, decision):
             db.execute("UPDATE donation_requests SET status='Rejected', updated_at=? WHERE donation_id=? AND status='Pending'",(now(),d['id']))
         audit('Request '+status.lower(),f'Request #{request_id}, donation #{d["id"]}')
         flash('Request '+status.lower()+'.')
-    return redirect(url_for('flow.detail',donation_id=d['id']))
+    return redirect(url_for('workflow.detail',donation_id=d['id']))
 
 
 @bp.route('/donation/<int:donation_id>/collect',methods=['POST'])
@@ -191,13 +191,13 @@ def collect(donation_id):
         notify(g.user['id'],f"{d['food_type']} has been collected. Thank you for sharing!",donation_id)
         audit('Donation collected',f'Donation #{donation_id}')
         flash('Donation marked as collected.')
-    return redirect(url_for('flow.detail',donation_id=donation_id))
+    return redirect(url_for('workflow.detail',donation_id=donation_id))
 
 
 @bp.route('/donation/<int:donation_id>/edit', methods=['GET','POST'])
 @role('donor')
 def edit(donation_id):
-    from .vi import SA
+    from .public import SA
     from math import isfinite
     db=get_db()
     if request.method=='POST':
@@ -221,12 +221,12 @@ def edit(donation_id):
                     notify(r['charity_id'],f'The donor updated donation #{donation_id}. Please review the latest details.',donation_id)
                 audit('Donation updated',f'Donation #{donation_id}')
                 flash('Donation updated.')
-                return redirect(url_for('flow.detail',donation_id=donation_id))
+                return redirect(url_for('workflow.detail',donation_id=donation_id))
     d=donation(donation_id)
     if d['status'] not in ('Available','Accepted'):
         abort(409)
     date=datetime.fromisoformat(d['expiry_time'].replace('Z','+00:00')).astimezone(SA).strftime('%Y-%m-%d')
-    return render_template('edit.html',d=d,date=date)
+    return render_template('donor/edit_donation.html',d=d,date=date)
 
 
 @bp.route('/donation/<int:donation_id>/delete',methods=['POST'])
@@ -244,7 +244,7 @@ def delete(donation_id):
         db.execute("UPDATE donations SET status='Deleted' WHERE id=?",(donation_id,))
         audit('Donation deleted',f'Donation #{donation_id}')
         flash('Donation deleted. Affected charities have been notified.')
-    return redirect(url_for('vi.dd'))
+    return redirect(url_for('public.donor_dashboard'))
 
 
 @bp.route('/requests')
@@ -254,21 +254,21 @@ def requests_list():
     rows=get_db().execute(f'''SELECT r.*,d.food_type,d.status AS donation_status,d.expiry_time,u.name AS charity_name
         FROM donation_requests r JOIN donations d ON d.id=r.donation_id JOIN users u ON u.id=r.charity_id
         WHERE {condition}=? ORDER BY r.id DESC''',(g.user['id'],)).fetchall()
-    return render_template('requests.html',rows=rows)
+    return render_template('shared/requests.html',rows=rows)
 
 
 @bp.route('/history')
 @role('donor')
 def history():
     ds=get_db().execute("SELECT d.*, u.name AS charity_name FROM donations d LEFT JOIN donation_requests r ON r.donation_id=d.id AND r.status='Collected' LEFT JOIN users u ON u.id=r.charity_id WHERE d.donor_id=? AND d.status IN ('Collected','Expired') ORDER BY d.id DESC",(g.user['id'],)).fetchall()
-    return render_template('history.html',ds=ds)
+    return render_template('donor/history.html',ds=ds)
 
 
 @bp.route('/notifications')
 @role('donor','charity','admin')
 def notifications():
     rows=get_db().execute('SELECT n.*, d.status AS donation_status FROM notifications n LEFT JOIN donations d ON d.id=n.donation_id WHERE n.user_id=? ORDER BY n.id DESC',(g.user['id'],)).fetchall()
-    return render_template('notifications.html',rows=rows)
+    return render_template('shared/notifications.html',rows=rows)
 
 
 @bp.route('/notifications/read',methods=['POST'])
@@ -278,13 +278,13 @@ def read_notifications():
     db.execute('UPDATE notifications SET is_read=1 WHERE user_id=?',(g.user['id'],))
     db.commit()
     flash('All notifications marked as read.')
-    return redirect(url_for('flow.admin_notifications' if g.admin_portal else 'flow.notifications'))
+    return redirect(url_for('workflow.admin_notifications' if g.admin_portal else 'workflow.notifications'))
 
 
 @bp.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if g.user and g.user['role'] == 'admin':
-        return redirect(url_for('flow.admin'))
+        return redirect(url_for('workflow.admin'))
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
@@ -295,14 +295,14 @@ def admin_login():
             # Independent login: keep any donor/charity session in other tabs intact.
             session['admin_uid'] = user['id']
             session['csrf'] = secrets.token_urlsafe(32)
-            return redirect(url_for('flow.admin'))
-    return render_template('admin_login.html')
+            return redirect(url_for('workflow.admin'))
+    return render_template('admin/login.html')
 
 
 @bp.route('/admin/logout')
 def admin_logout():
     session.pop('admin_uid', None)
-    return redirect(url_for('flow.admin_login'))
+    return redirect(url_for('workflow.admin_login'))
 
 
 @bp.route('/admin')
@@ -313,7 +313,7 @@ def admin():
     ds=db.execute('SELECT d.*,u.name AS donor_name FROM donations d LEFT JOIN users u ON u.id=d.donor_id ORDER BY d.id DESC').fetchall()
     activity=db.execute('SELECT a.*,u.name FROM activity a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 100').fetchall()
     counts={r['status']:r['n'] for r in db.execute('SELECT status,COUNT(*) AS n FROM donations GROUP BY status')}
-    return render_template('admin.html',users=users,ds=ds,activity=activity,counts=counts)
+    return render_template('admin/dashboard.html',users=users,ds=ds,activity=activity,counts=counts)
 
 
 @bp.route('/admin/users/<int:user_id>/<action>',methods=['POST'])
@@ -330,7 +330,7 @@ def manage_user(user_id,action):
         status='Active' if action=='approve' else 'Inactive'
         if status==u['account_status']:
             flash('Account already has this status.')
-            return redirect(url_for('flow.admin'))
+            return redirect(url_for('workflow.admin'))
         db.execute('UPDATE users SET account_status=? WHERE id=?',(status,user_id))
         if u['charity_id']:
             db.execute('UPDATE charities SET status=? WHERE id=?',(status,u['charity_id']))
@@ -344,7 +344,7 @@ def manage_user(user_id,action):
         notify(user_id,f'Your account is now {status.lower()}.')
         audit('Account '+status.lower(),f'{u["role"]} #{user_id}: {u["name"]}')
         flash(f'{u["name"]}: account {status.lower()}.')
-    return redirect(url_for('flow.admin'))
+    return redirect(url_for('workflow.admin'))
 
 
 @click.command('create-admin')

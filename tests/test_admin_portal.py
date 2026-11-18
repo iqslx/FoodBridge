@@ -4,7 +4,7 @@ root=Path(__file__).resolve().parents[1]
 project=root
 sys.path.insert(0,str(project))
 from foodbridge import create_app
-from foodbridge.db import get_db
+from foodbridge.database.connection import get_db
 from werkzeug.security import generate_password_hash
 count=0
 def check(value,label):

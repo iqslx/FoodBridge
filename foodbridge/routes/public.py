@@ -5,9 +5,9 @@ from secrets import token_urlsafe
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from .db import get_db
+from ..database.connection import get_db
 
-bp = Blueprint("vi", __name__)
+bp = Blueprint("public", __name__)
 SA = timezone(timedelta(hours=3))
 
 
@@ -30,12 +30,12 @@ def me():
 
 
 @bp.route("/")
-def hm():
-    return render_template("index.html")
+def home():
+    return render_template("public/home.html")
 
 
 @bp.route("/register", methods=["GET", "POST"])
-def rg():
+def register_donor():
     if request.method == "POST":
         nm = request.form.get("name", "").strip()
         em = request.form.get("email", "").strip().lower()
@@ -56,16 +56,16 @@ def rg():
                 (nm, em, generate_password_hash(pw), ph, "donor"),
             )
             db.commit()
-            from .workflow import audit
+            from .workflows import audit
             audit('Donor registered', em)
             db.commit()
             flash("Account created. You can log in now.")
-            return redirect(url_for("vi.li"))
-    return render_template("register.html")
+            return redirect(url_for("public.login"))
+    return render_template("auth/register_donor.html")
 
 
 @bp.route("/charity", methods=["GET", "POST"])
-def rc():
+def register_charity():
     if request.method == "POST":
         on = request.form.get("organization_name", "").strip()
         ln = request.form.get("license_number", "").strip()
@@ -95,16 +95,16 @@ def rc():
                 (on, em, generate_password_hash(pw), ph, "charity", charity_id),
             )
             db.commit()
-            from .workflow import audit
+            from .workflows import audit
             audit('Charity registered', em)
             db.commit()
             flash("Charity account created. You can log in now.")
-            return redirect(url_for("vi.li"))
-    return render_template("charity.html")
+            return redirect(url_for("public.login"))
+    return render_template("auth/register_charity.html")
 
 
 @bp.route("/login", methods=["GET", "POST"])
-def li():
+def login():
     if request.method == "POST":
         em = request.form.get("email", "").strip().lower()
         pw = request.form.get("password", "")
@@ -120,42 +120,42 @@ def li():
             session["uid"] = u["id"]
             session["role"] = u["role"]
             if u["role"] == "charity":
-                return redirect(url_for("vi.ls"))
-            return redirect(url_for("vi.dd"))
-    return render_template("login.html")
+                return redirect(url_for("public.available_donations"))
+            return redirect(url_for("public.donor_dashboard"))
+    return render_template("auth/login.html")
 
 
 @bp.route("/logout")
-def lo():
+def logout():
     session.pop("uid", None)
     session.pop("role", None)
-    return redirect(url_for("vi.li"))
+    return redirect(url_for("public.login"))
 
 
 @bp.route("/dashboard")
-def dd():
+def donor_dashboard():
     u = me()
     if u is None:
-        return redirect(url_for("vi.li"))
+        return redirect(url_for("public.login"))
     if u["role"] == "charity":
-        return redirect(url_for("vi.ls"))
+        return redirect(url_for("public.available_donations"))
     if u['role'] == 'admin':
-        return redirect(url_for('flow.admin'))
+        return redirect(url_for('workflow.admin'))
     ds = get_db().execute("SELECT d.*, (SELECT COUNT(*) FROM donation_requests r WHERE r.donation_id=d.id AND r.status='Pending') AS pending_count FROM donations d WHERE donor_id = ? AND status IN ('Available','Accepted') ORDER BY id DESC", (u['id'],)).fetchall()
     now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
     available_count = sum(d['status'] == 'Available' and d['expiry_time'] > now for d in ds)
-    return render_template("donor_dashboard.html", u=u, ds=ds, available_count=available_count)
+    return render_template("donor/dashboard.html", u=u, ds=ds, available_count=available_count)
 
 
 @bp.route("/add", methods=["GET", "POST"])
-def ad():
+def create_donation():
     u = me()
     if u is None:
-        return redirect(url_for("vi.li"))
+        return redirect(url_for("public.login"))
     if u["role"] == "charity":
-        return redirect(url_for("vi.ls"))
+        return redirect(url_for("public.available_donations"))
     if u['role'] != 'donor':
-        return redirect(url_for('flow.admin'))
+        return redirect(url_for('workflow.admin'))
     if request.method == "POST":
         ft = request.form.get("food_type", "").strip()
         qt = request.form.get("quantity", "").strip()
@@ -188,21 +188,21 @@ def ad():
                 (ft, q, tx, pa, "Available", u["id"]),
             )
             db.commit()
-            from .workflow import audit
+            from .workflows import audit
             audit('Donation added', ft)
             db.commit()
             flash("Donation added.")
-            return redirect(url_for("vi.dd"))
-    return render_template("add.html", u=u)
+            return redirect(url_for("public.donor_dashboard"))
+    return render_template("donor/create_donation.html", u=u)
 
 
 @bp.route("/donations")
-def ls():
+def available_donations():
     u = me()
     if u is None:
-        return redirect(url_for("vi.li"))
+        return redirect(url_for("public.login"))
     if u["role"] != "charity":
-        return redirect(url_for("vi.dd"))
+        return redirect(url_for("public.donor_dashboard"))
     from math import isfinite
     food = request.args.get('food', '').strip()
     area = request.args.get('area', '').strip()
@@ -221,4 +221,4 @@ def ls():
         WHERE d.status='Available' AND d.expiry_time>? AND u.account_status='Active'
         AND instr(lower(d.food_type),lower(?))>0 AND instr(lower(d.pickup_address),lower(?))>0 AND d.quantity>=?
         ORDER BY d.id DESC""", (now, food, area, quantity)).fetchall()
-    return render_template("donations.html", ds=ds, u=u)
+    return render_template("charity/available_donations.html", ds=ds, u=u)

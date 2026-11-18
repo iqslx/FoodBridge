@@ -9,7 +9,7 @@ from flask import Flask
 
 def create_app(test_config=None):
     """Create the app; optionally override DATABASE through configuration."""
-    app = Flask(__name__, static_folder=None)
+    app = Flask(__name__)
     app.config.from_mapping(
         SECRET_KEY=os.environ.get('FOODBRIDGE_SECRET_KEY') or os.environ.get('SECRET_KEY'),
         DATABASE_URL=os.environ.get('DATABASE_URL'),
@@ -39,17 +39,17 @@ def create_app(test_config=None):
     if hosted:
         app.config['SESSION_COOKIE_SECURE'] = True
 
-    from . import db
+    from .database import connection
 
-    db.init_app(app)
+    connection.init_app(app)
     with app.app_context():
-        db.init_db()
+        connection.init_db()
 
-    from . import vi
+    from .routes import public
 
-    app.register_blueprint(vi.bp)
-    from . import workflow
-    workflow.init_app(app)
+    app.register_blueprint(public.bp)
+    from .routes import workflows
+    workflows.init_app(app)
 
     from flask import render_template
     @app.errorhandler(400)
@@ -57,5 +57,5 @@ def create_app(test_config=None):
     @app.errorhandler(404)
     @app.errorhandler(409)
     def friendly_error(error):
-        return render_template('error.html', error=error), error.code
+        return render_template('shared/error.html', error=error), error.code
     return app

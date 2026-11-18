@@ -11,7 +11,7 @@ def get_db():
     """Return one database connection per Flask application context."""
     if "db" not in g:
         if current_app.config.get('DATABASE_URL'):
-            from .postgres import Connection
+            from .postgres_adapter import Connection
             g.db = Connection(current_app.config['DATABASE_URL'], current_app.config.get('DATABASE_SCHEMA'))
             return g.db
         g.db = sqlite3.connect(current_app.config["DATABASE"])
@@ -28,18 +28,18 @@ def close_db(exception=None):
 
 
 def init_db():
-    """Create missing tables from schema.sql without deleting existing data."""
+    """Create missing tables from the database schema without deleting existing data."""
     if current_app.config.get('DATABASE_URL'):
         connection = get_db()
         # Multiple cold starts can initialize concurrently; serialize schema DDL.
         connection.execute('SELECT pg_advisory_xact_lock(7402123401)')
-        with current_app.open_resource('schema_postgres.sql') as schema:
+        with current_app.open_resource('database/schemas/postgres.sql') as schema:
             connection.executescript(schema.read().decode('utf-8'))
         activate_waiting_accounts(connection)
         connection.commit()
         return
     Path(current_app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
-    with current_app.open_resource("schema.sql") as schema:
+    with current_app.open_resource("database/schemas/sqlite.sql") as schema:
         get_db().executescript(schema.read().decode("utf-8"))
     connection = get_db()
     user_columns = {row[1] for row in connection.execute('PRAGMA table_info(users)')}
@@ -69,7 +69,7 @@ def activate_waiting_accounts(connection):
 def init_db_command():
     """Create the database and any missing FoodBridge tables."""
     init_db()
-    click.echo("Initialized FoodBridge database from schema.sql.")
+    click.echo("Initialized FoodBridge database from the database schema.")
 
 
 def init_app(app):

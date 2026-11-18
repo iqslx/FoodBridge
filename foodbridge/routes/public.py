@@ -31,7 +31,7 @@ def me():
 
 @bp.route("/")
 def home():
-    return render_template("public/home.html")
+    return render_template("pages/home.html")
 
 
 @bp.route("/register", methods=["GET", "POST"])

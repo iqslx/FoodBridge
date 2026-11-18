@@ -11,7 +11,7 @@ This is a separate copy of the current FoodBridge application, prepared for a Py
 
 ## First deployment
 1. Connect the hosting account and provide a private source repository or supported source upload.
-2. Build the supplied Dockerfile.
+2. From the repository root, build with `docker build -f deployment/Dockerfile -t foodbridge .`. The adjacent `deployment/Dockerfile.dockerignore` supplies the build exclusions.
 3. Mount persistent storage at /app/instance before accepting registrations.
 4. Set up the administrator through the existing create-admin command on the deployed service; local administrator credentials are not copied.
 5. Verify the public HTTPS URL, immediate registration and login, requests and collection workflow before sharing.
